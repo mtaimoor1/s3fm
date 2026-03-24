@@ -27,6 +27,10 @@ type model struct {
 	pendingY      bool
 	statusMsg     string
 	showHelp      bool
+	searching     bool
+	searchQuery   string
+	searchMatches []int
+	searchCursor  int
 }
 
 func (m model) Init() tea.Cmd {

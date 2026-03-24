@@ -44,6 +44,7 @@ go build -o s3fm .
 | `G`              | Jump to the top of the list                         |
 | `g`              | Jump to the bottom of the list                      |
 | `yy`             | Copy the S3 path of the item under the cursor to clipboard (`s3://bucket/prefix/object`) |
+| `/`              | Search and filter the list. Type to filter, `enter` to navigate into match, `esc` to cancel |
 | `enter`          | Select bucket or navigate into folder               |
 | `esc` / `backspace` | Go back to parent directory or bucket list       |
 | `pgup`           | Page up                                             |

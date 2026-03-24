@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -80,6 +81,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Search mode input handling
+		if m.searching {
+			return m.handleSearchInput(key, viewportHeight)
+		}
+
 		// Handle yy (two-press yank)
 		if key == "y" {
 			if m.pendingY {
@@ -104,6 +110,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = ""
 
 		switch key {
+		case "/":
+			m.searching = true
+			m.searchQuery = ""
+			m.searchMatches = nil
+			m.searchCursor = 0
+			m.recomputeSearchMatches()
+			return m, nil
 		case "?":
 			m.showHelp = true
 			return m, nil
@@ -131,33 +144,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "enter":
-			if m.state == bucketList {
-				m.currentBucket = m.buckets[m.cursor]
-				files, err := m.s3Client.listPrefix(m.currentBucket, "")
-				if err != nil {
-					m.err = err
-					return m, nil
-				}
-				m.files = files
-				m.state = fileList
-				m.cursor = 0
-				m.yOffset = 0
-				m.currentPrefix = ""
-			} else if m.state == fileList {
-				selected := m.files[m.cursor]
-				if strings.HasSuffix(selected, "/") {
-					newPrefix := m.currentPrefix + selected
-					files, err := m.s3Client.listPrefix(m.currentBucket, newPrefix)
-					if err != nil {
-						m.err = err
-						return m, nil
-					}
-					m.files = files
-					m.currentPrefix = newPrefix
-					m.cursor = 0
-					m.yOffset = 0
-				}
-			}
+			return m.handleEnter(viewportHeight)
 		case "esc", "backspace":
 			if m.state == fileList {
 				if m.currentPrefix == "" {
@@ -234,6 +221,120 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// handleSearchInput processes keystrokes while in search mode.
+func (m model) handleSearchInput(key string, viewportHeight int) (tea.Model, tea.Cmd) {
+	switch key {
+	case "esc":
+		// Cancel search, restore original view
+		m.searching = false
+		m.searchQuery = ""
+		m.searchMatches = nil
+		m.searchCursor = 0
+		return m, nil
+	case "enter":
+		// Confirm search and navigate into the matched item
+		if len(m.searchMatches) > 0 {
+			realIdx := m.searchMatches[m.searchCursor]
+			m.cursor = realIdx
+			// Adjust yOffset so cursor is visible
+			if m.cursor < m.yOffset {
+				m.yOffset = m.cursor
+			} else if m.cursor >= m.yOffset+viewportHeight {
+				m.yOffset = m.cursor - viewportHeight + 1
+			}
+		}
+		m.searching = false
+		m.searchQuery = ""
+		m.searchMatches = nil
+		m.searchCursor = 0
+
+		// Now execute enter (navigate into prefix/bucket)
+		return m.handleEnter(viewportHeight)
+	case "backspace":
+		if len(m.searchQuery) > 0 {
+			_, size := utf8.DecodeLastRuneInString(m.searchQuery)
+			m.searchQuery = m.searchQuery[:len(m.searchQuery)-size]
+			m.recomputeSearchMatches()
+		}
+		return m, nil
+	case "up", "ctrl+p":
+		if m.searchCursor > 0 {
+			m.searchCursor--
+		}
+		return m, nil
+	case "down", "ctrl+n":
+		if m.searchCursor < len(m.searchMatches)-1 {
+			m.searchCursor++
+		}
+		return m, nil
+	default:
+		// Append printable characters to query
+		if len(key) == 1 && key[0] >= 32 && key[0] < 127 {
+			m.searchQuery += key
+			m.recomputeSearchMatches()
+		}
+		return m, nil
+	}
+}
+
+// handleEnter executes the "enter" action (navigate into bucket/folder).
+func (m model) handleEnter(viewportHeight int) (tea.Model, tea.Cmd) {
+	if m.state == bucketList {
+		if m.cursor >= len(m.buckets) {
+			return m, nil
+		}
+		m.currentBucket = m.buckets[m.cursor]
+		files, err := m.s3Client.listPrefix(m.currentBucket, "")
+		if err != nil {
+			m.err = err
+			return m, nil
+		}
+		m.files = files
+		m.state = fileList
+		m.cursor = 0
+		m.yOffset = 0
+		m.currentPrefix = ""
+	} else if m.state == fileList {
+		if m.cursor >= len(m.files) {
+			return m, nil
+		}
+		selected := m.files[m.cursor]
+		if strings.HasSuffix(selected, "/") {
+			newPrefix := m.currentPrefix + selected
+			files, err := m.s3Client.listPrefix(m.currentBucket, newPrefix)
+			if err != nil {
+				m.err = err
+				return m, nil
+			}
+			m.files = files
+			m.currentPrefix = newPrefix
+			m.cursor = 0
+			m.yOffset = 0
+		}
+	}
+	return m, nil
+}
+
+// recomputeSearchMatches filters the current list by the search query.
+func (m *model) recomputeSearchMatches() {
+	m.searchMatches = nil
+	m.searchCursor = 0
+
+	var list []string
+	if m.state == bucketList {
+		list = m.buckets
+	} else {
+		list = m.files
+	}
+
+	query := strings.ToLower(m.searchQuery)
+	for i, item := range list {
+		if query == "" || strings.Contains(strings.ToLower(item), query) {
+			m.searchMatches = append(m.searchMatches, i)
+		}
+	}
 }
 
 // buildS3Path constructs the full s3:// URI for the item under the cursor.

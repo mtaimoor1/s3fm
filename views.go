@@ -119,10 +119,18 @@ func (m model) View() string {
 	// --- Header ---
 	if m.state == bucketList {
 		m.renderBucketHeader(&b, w)
-		m.renderBucketList(&b, viewportHeight)
+		if m.searching {
+			m.renderSearchResults(&b, viewportHeight)
+		} else {
+			m.renderBucketList(&b, viewportHeight)
+		}
 	} else {
 		m.renderFileHeader(&b, w)
-		m.renderFileList(&b, viewportHeight)
+		if m.searching {
+			m.renderSearchResults(&b, viewportHeight)
+		} else {
+			m.renderFileList(&b, viewportHeight)
+		}
 	}
 
 	// --- Footer ---
@@ -234,6 +242,50 @@ func (m model) renderFileList(b *strings.Builder, viewportHeight int) {
 	}
 }
 
+func (m model) renderSearchResults(b *strings.Builder, viewportHeight int) {
+	if len(m.searchMatches) == 0 {
+		b.WriteString(emptyStyle.Render("No matches found.") + "\n")
+		return
+	}
+
+	var list []string
+	if m.state == bucketList {
+		list = m.buckets
+	} else {
+		list = m.files
+	}
+
+	start := 0
+	if m.searchCursor >= viewportHeight {
+		start = m.searchCursor - viewportHeight + 1
+	}
+	end := start + viewportHeight
+	if end > len(m.searchMatches) {
+		end = len(m.searchMatches)
+	}
+
+	for i := start; i < end; i++ {
+		realIdx := m.searchMatches[i]
+		name := list[realIdx]
+
+		isDir := strings.HasSuffix(name, "/")
+		icon := fileIcon
+		if m.state == bucketList {
+			icon = bucketIcon
+		} else if isDir {
+			icon = folderIcon
+		}
+
+		if i == m.searchCursor {
+			line := selectedItemStyle.Render(fmt.Sprintf("%s%s%s", selectedPointer, icon, name))
+			b.WriteString(line + "\n")
+		} else {
+			line := itemStyle.Render(fmt.Sprintf("  %s%s", icon, name))
+			b.WriteString(line + "\n")
+		}
+	}
+}
+
 func (m model) renderHelpOverlay(w int) string {
 	const keyColWidth = 20
 	const boxWidth = 54
@@ -265,6 +317,7 @@ func (m model) renderHelpOverlay(w int) string {
 		{"G", "Jump to top of list"},
 		{"g", "Jump to bottom of list"},
 		{"yy", "Copy S3 path to clipboard"},
+		{"/", "Search and filter list"},
 		{"pgup / pgdown", "Page up / down"},
 		{"?", "Toggle this help"},
 		{"q / ctrl+c", "Quit"},
@@ -318,8 +371,17 @@ func (m model) renderFooter(b *strings.Builder, viewportHeight int) {
 
 	b.WriteString("\n")
 
-	// Status message (e.g. "Copied: s3://...") or key hints
-	if m.statusMsg != "" {
+	// Search prompt, status message, or key hints
+	if m.searching {
+		promptStyle := lipgloss.NewStyle().Foreground(violet).Bold(true).PaddingLeft(2)
+		queryStyle := lipgloss.NewStyle().Foreground(white)
+		cursorChar := lipgloss.NewStyle().Foreground(violet).Bold(true).Render("\u2588")
+		matchInfo := ""
+		if m.searchQuery != "" {
+			matchInfo = statusDescStyle.Render(fmt.Sprintf("  %d match(es)", len(m.searchMatches)))
+		}
+		b.WriteString(promptStyle.Render("/") + queryStyle.Render(m.searchQuery) + cursorChar + matchInfo + "\n")
+	} else if m.statusMsg != "" {
 		msgStyle := lipgloss.NewStyle().Foreground(green).Bold(true).PaddingLeft(2)
 		b.WriteString(msgStyle.Render(m.statusMsg) + "\n")
 	} else {
@@ -328,6 +390,7 @@ func (m model) renderFooter(b *strings.Builder, viewportHeight int) {
 			{"enter", "open"},
 			{"esc", "back"},
 			{"yy", "copy path"},
+			{"/", "search"},
 			{"G/g", "top/bottom"},
 			{"q", "quit"},
 			{"?", "help"},
