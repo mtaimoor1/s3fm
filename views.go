@@ -2,119 +2,265 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Color palette
 var (
-	titleStyle = lipgloss.NewStyle().
+	purple    = lipgloss.Color("#7C3AED")
+	violet    = lipgloss.Color("#A78BFA")
+	indigo    = lipgloss.Color("#6366F1")
+	slate     = lipgloss.Color("#94A3B8")
+	darkSlate = lipgloss.Color("#475569")
+	white     = lipgloss.Color("#F8FAFC")
+	dimWhite  = lipgloss.Color("#CBD5E1")
+	green     = lipgloss.Color("#34D399")
+	amber     = lipgloss.Color("#FBBF24")
+	red       = lipgloss.Color("#F87171")
+	darkBg    = lipgloss.Color("#1E1B2E")
+	headerBg  = lipgloss.Color("#312E81")
+)
+
+// Styles
+var (
+	logoStyle = lipgloss.NewStyle().
 			Bold(true).
-			Background(lipgloss.Color("#7D56F4")).
-			Foreground(lipgloss.Color("#FFFFFF")).
+			Foreground(violet).
+			PaddingRight(1)
+
+	titleBarStyle = lipgloss.NewStyle().
+			Background(headerBg).
+			Foreground(white).
+			Bold(true).
 			Padding(0, 1)
 
+	breadcrumbStyle = lipgloss.NewStyle().
+			Foreground(slate).
+			PaddingLeft(2)
+
+	breadcrumbActiveStyle = lipgloss.NewStyle().
+				Foreground(violet).
+				Bold(true)
+
 	itemStyle = lipgloss.NewStyle().
+			Foreground(dimWhite).
 			PaddingLeft(2)
 
 	selectedItemStyle = lipgloss.NewStyle().
-				Reverse(true).
+				Foreground(white).
 				Bold(true).
+				PaddingLeft(1).
+				BorderLeft(true).
+				BorderStyle(lipgloss.ThickBorder()).
+				BorderForeground(purple)
+
+	folderIcon      = lipgloss.NewStyle().Foreground(amber).Render("\U0001F4C1 ")
+	fileIcon        = lipgloss.NewStyle().Foreground(slate).Render("   ")
+	bucketIcon      = lipgloss.NewStyle().Foreground(green).Render("\U0001F4E6 ")
+	selectedPointer = lipgloss.NewStyle().Foreground(purple).Bold(true).Render("\u25B8 ")
+
+	statusBarStyle = lipgloss.NewStyle().
+			Foreground(darkSlate).
+			PaddingLeft(2)
+
+	statusKeyStyle = lipgloss.NewStyle().
+			Foreground(violet).
+			Bold(true)
+
+	statusDescStyle = lipgloss.NewStyle().
+			Foreground(darkSlate)
+
+	scrollIndicatorStyle = lipgloss.NewStyle().
+				Foreground(slate).
 				PaddingLeft(2)
 
-	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF0000")).
-			Padding(1)
+	countStyle = lipgloss.NewStyle().
+			Foreground(slate).
+			PaddingLeft(2)
+
+	errorBoxStyle = lipgloss.NewStyle().
+			Foreground(red).
+			Bold(true).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(red).
+			Padding(1, 2)
+
+	emptyStyle = lipgloss.NewStyle().
+			Foreground(darkSlate).
+			Italic(true).
+			PaddingLeft(4)
 )
 
+const headerHeight = 4 // title bar + breadcrumb + blank line + blank
+const footerHeight = 3 // blank + status bar + scroll info
+
 func (m model) View() string {
-	if m.err != nil {
-		// Wrap error text to width
-		w := m.width
-		if w == 0 {
-			w = 80 // Default fallback width
-		}
-
-		errText := fmt.Sprintf("Error: %v", m.err)
-		wrappedErr := errorStyle.Width(w - 4).Render(errText)
-
-		return fmt.Sprintf("%s\n\nPress q to quit.", wrappedErr)
+	w := m.width
+	if w == 0 {
+		w = 80
 	}
 
-	// Calculate heights
-	// Header: Text + Empty Line = 2 lines
-	const headerHeight = 3
-	// Footer: Empty Line + Text = 2 lines
-	const footerHeight = 2
+	if m.err != nil {
+		errText := fmt.Sprintf("  Error: %v", m.err)
+		box := errorBoxStyle.Width(w - 6).Render(errText)
+		hint := lipgloss.NewStyle().Foreground(slate).PaddingLeft(2).Render("Press any key to quit.")
+		return fmt.Sprintf("\n%s\n\n%s\n", box, hint)
+	}
 
 	viewportHeight := m.height - headerHeight - footerHeight
 	if viewportHeight < 1 {
 		viewportHeight = 1
 	}
 
-	s := ""
+	var b strings.Builder
+
+	// --- Header ---
 	if m.state == bucketList {
-		header := fmt.Sprintf("Region: %s\n Select a bucket:", m.region)
-		s += titleStyle.Render(header) + "\n\n"
-
-		start := m.yOffset
-		end := start + viewportHeight
-		if end > len(m.buckets) {
-			end = len(m.buckets)
-		}
-
-		for i := start; i < end; i++ {
-			b := m.buckets[i]
-			if m.cursor == i {
-				s += selectedItemStyle.Render(fmt.Sprintf("[x] %s", b)) + "\n"
-			} else {
-				s += itemStyle.Render(fmt.Sprintf("[ ] %s", b)) + "\n"
-			}
-		}
+		m.renderBucketHeader(&b, w)
+		m.renderBucketList(&b, viewportHeight)
 	} else {
-		header := fmt.Sprintf("Region: %s Bucket: %s, Path: %s", m.region, m.currentBucket, m.currentPrefix)
-		// Truncate header if too long to prevent wrapping
-		if len(header) > m.width-4 { // -4 for padding safety
-			if m.width > 7 {
-				header = header[:m.width-7] + "..."
-			}
-		}
-		s += titleStyle.Render(header) + "\n\n"
+		m.renderFileHeader(&b, w)
+		m.renderFileList(&b, viewportHeight)
+	}
 
-		start := m.yOffset
-		end := start + viewportHeight
-		if end > len(m.files) {
-			end = len(m.files)
-		}
+	// --- Footer ---
+	m.renderFooter(&b, viewportHeight)
 
-		for i := start; i < end; i++ {
-			f := m.files[i]
-			if m.cursor == i {
-				s += selectedItemStyle.Render(fmt.Sprintf("[x] %s", f)) + "\n"
-			} else {
-				s += itemStyle.Render(fmt.Sprintf("[ ] %s", f)) + "\n"
-			}
+	return b.String()
+}
+
+func (m model) renderBucketHeader(b *strings.Builder, w int) {
+	logo := logoStyle.Render("s3fm")
+	region := lipgloss.NewStyle().Foreground(slate).Render(m.region)
+	title := titleBarStyle.Width(w).Render(fmt.Sprintf("%s  %s", logo, region))
+	b.WriteString(title + "\n")
+
+	crumb := breadcrumbStyle.Render("Buckets")
+	count := countStyle.Render(fmt.Sprintf("(%d items)", len(m.buckets)))
+	b.WriteString(crumb + count + "\n\n")
+}
+
+func (m model) renderFileHeader(b *strings.Builder, w int) {
+	logo := logoStyle.Render("s3fm")
+	region := lipgloss.NewStyle().Foreground(slate).Render(m.region)
+	title := titleBarStyle.Width(w).Render(fmt.Sprintf("%s  %s", logo, region))
+	b.WriteString(title + "\n")
+
+	// Breadcrumb: Buckets > bucket-name > path > parts
+	parts := []string{}
+	if m.startBucket == "" {
+		parts = append(parts, breadcrumbStyle.Render("Buckets"))
+		parts = append(parts, breadcrumbStyle.Render(" > "))
+	}
+	parts = append(parts, breadcrumbActiveStyle.Render(m.currentBucket))
+
+	if m.currentPrefix != "" {
+		segments := strings.Split(strings.TrimSuffix(m.currentPrefix, "/"), "/")
+		for _, seg := range segments {
+			parts = append(parts, breadcrumbStyle.Render(" > "))
+			parts = append(parts, breadcrumbActiveStyle.Render(seg))
 		}
 	}
 
-	// Add Footer
-	// Previous loop adds a newline at the end of the last item.
-	// So just adding "Press q..." puts it on the next line.
-	// We want 1 empty line before footer.
+	crumb := lipgloss.JoinHorizontal(lipgloss.Left, parts...)
+	count := countStyle.Render(fmt.Sprintf("(%d items)", len(m.files)))
 
-	s += "\nPress q to quit."
-	// Debug info on the same line to save space, or careful with next line
-	// Let's put debug info on the same line if it fits, or assume footerHeight covers it.
-	// Given we set footerHeight=2, we have:
-	// Line N (Last Item) \n
-	// Line N+1 (Empty)
-	// Line N+2 (Text)
-	// So we need one explicit \n before text.
-	// Wait, the loop adds \n after the last item.
-	// So cursor is at start of Line N+1.
-	// "\nText" -> Empty line at N+1, Text at N+2.
-	// This matches footerHeight = 2 (space consumption).
+	// Truncate if needed
+	crumbLine := crumb + count
+	_ = crumbLine
+	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Left, crumb, count) + "\n\n")
+}
 
-	s += fmt.Sprintf(" | Debug: Cur=%d, Off=%d, H=%d", m.cursor, m.yOffset, m.height)
+func (m model) renderBucketList(b *strings.Builder, viewportHeight int) {
+	if len(m.buckets) == 0 {
+		b.WriteString(emptyStyle.Render("No buckets found.") + "\n")
+		return
+	}
 
-	return s
+	start := m.yOffset
+	end := start + viewportHeight
+	if end > len(m.buckets) {
+		end = len(m.buckets)
+	}
+
+	for i := start; i < end; i++ {
+		name := m.buckets[i]
+		if m.cursor == i {
+			line := selectedItemStyle.Render(fmt.Sprintf("%s%s%s", selectedPointer, bucketIcon, name))
+			b.WriteString(line + "\n")
+		} else {
+			line := itemStyle.Render(fmt.Sprintf("  %s%s", bucketIcon, name))
+			b.WriteString(line + "\n")
+		}
+	}
+}
+
+func (m model) renderFileList(b *strings.Builder, viewportHeight int) {
+	if len(m.files) == 0 {
+		b.WriteString(emptyStyle.Render("This directory is empty.") + "\n")
+		return
+	}
+
+	start := m.yOffset
+	end := start + viewportHeight
+	if end > len(m.files) {
+		end = len(m.files)
+	}
+
+	for i := start; i < end; i++ {
+		name := m.files[i]
+		isDir := strings.HasSuffix(name, "/")
+		icon := fileIcon
+		if isDir {
+			icon = folderIcon
+		}
+
+		if m.cursor == i {
+			line := selectedItemStyle.Render(fmt.Sprintf("%s%s%s", selectedPointer, icon, name))
+			b.WriteString(line + "\n")
+		} else {
+			line := itemStyle.Render(fmt.Sprintf("  %s%s", icon, name))
+			b.WriteString(line + "\n")
+		}
+	}
+}
+
+func (m model) renderFooter(b *strings.Builder, viewportHeight int) {
+	listLen := len(m.buckets)
+	if m.state == fileList {
+		listLen = len(m.files)
+	}
+
+	b.WriteString("\n")
+
+	// Key hints
+	keys := []struct{ key, desc string }{
+		{"j/k", "navigate"},
+		{"enter", "open"},
+		{"esc", "back"},
+		{"G/g", "top/bottom"},
+		{"q", "quit"},
+	}
+	var hints []string
+	for _, k := range keys {
+		hints = append(hints, statusKeyStyle.Render(k.key)+" "+statusDescStyle.Render(k.desc))
+	}
+	b.WriteString(statusBarStyle.Render(strings.Join(hints, "  "+statusDescStyle.Render("|")+"  ")) + "\n")
+
+	// Scroll position
+	if listLen > 0 {
+		pos := fmt.Sprintf("%d/%d", m.cursor+1, listLen)
+		scrollInfo := scrollIndicatorStyle.Render(pos)
+
+		if m.yOffset > 0 || m.yOffset+viewportHeight < listLen {
+			pct := 0
+			if listLen > 1 {
+				pct = m.cursor * 100 / (listLen - 1)
+			}
+			scrollInfo += statusDescStyle.Render(fmt.Sprintf("  %d%%", pct))
+		}
+		b.WriteString(scrollInfo)
+	}
 }

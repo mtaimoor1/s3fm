@@ -14,8 +14,8 @@ type initMsg struct {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	const headerHeight = 3
-	const footerHeight = 2
+	const headerHeight = 4
+	const footerHeight = 3
 	viewportHeight := m.height - headerHeight - footerHeight
 	if viewportHeight < 1 {
 		viewportHeight = 1
