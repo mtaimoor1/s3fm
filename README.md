@@ -37,15 +37,19 @@ go build -o s3fm .
 
 ## Keyboard Controls
 
-| Key              | Action                                      |
-|------------------|---------------------------------------------|
-| `up` / `k`       | Move cursor up                              |
-| `down` / `j`     | Move cursor down                            |
-| `enter`          | Select bucket or navigate into folder       |
-| `esc` / `backspace` | Go back to parent directory or bucket list |
-| `pgup`           | Page up                                     |
-| `pgdown`         | Page down                                   |
-| `q` / `ctrl+c`   | Quit                                        |
+| Key              | Action                                              |
+|------------------|-----------------------------------------------------|
+| `up` / `k`       | Move cursor up                                      |
+| `down` / `j`     | Move cursor down                                    |
+| `G`              | Jump to the top of the list                         |
+| `g`              | Jump to the bottom of the list                      |
+| `yy`             | Copy the S3 path of the item under the cursor to clipboard (`s3://bucket/prefix/object`) |
+| `enter`          | Select bucket or navigate into folder               |
+| `esc` / `backspace` | Go back to parent directory or bucket list       |
+| `pgup`           | Page up                                             |
+| `pgdown`         | Page down                                           |
+| `?`              | Show keyboard shortcuts help overlay                |
+| `q` / `ctrl+c`   | Quit                                                |
 
 ## License
 
