@@ -72,6 +72,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		key := msg.String()
 
+		// When help overlay is open, only esc closes it
+		if m.showHelp {
+			if key == "esc" || key == "?" {
+				m.showHelp = false
+			}
+			return m, nil
+		}
+
 		// Handle yy (two-press yank)
 		if key == "y" {
 			if m.pendingY {
@@ -96,6 +104,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = ""
 
 		switch key {
+		case "?":
+			m.showHelp = true
+			return m, nil
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "up", "k":

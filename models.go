@@ -26,6 +26,7 @@ type model struct {
 	yOffset       int
 	pendingY      bool
 	statusMsg     string
+	showHelp      bool
 }
 
 func (m model) Init() tea.Cmd {

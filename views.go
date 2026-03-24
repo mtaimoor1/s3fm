@@ -128,7 +128,14 @@ func (m model) View() string {
 	// --- Footer ---
 	m.renderFooter(&b, viewportHeight)
 
-	return b.String()
+	view := b.String()
+
+	// --- Help overlay ---
+	if m.showHelp {
+		view = m.renderHelpOverlay(w)
+	}
+
+	return view
 }
 
 func (m model) renderBucketHeader(b *strings.Builder, w int) {
@@ -227,6 +234,82 @@ func (m model) renderFileList(b *strings.Builder, viewportHeight int) {
 	}
 }
 
+func (m model) renderHelpOverlay(w int) string {
+	const keyColWidth = 20
+	const boxWidth = 54
+	descColWidth := boxWidth - keyColWidth - 6 // 6 = border(2) + padding(4)
+
+	helpKeyStyle := lipgloss.NewStyle().
+		Foreground(violet).
+		Bold(true).
+		Width(keyColWidth).
+		Align(lipgloss.Right).
+		PaddingRight(2)
+
+	helpDescStyle := lipgloss.NewStyle().
+		Foreground(dimWhite).
+		Width(descColWidth)
+
+	helpTitleStyle := lipgloss.NewStyle().
+		Foreground(white).
+		Bold(true).
+		MarginBottom(1).
+		BorderBottom(true).
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(darkSlate)
+
+	keys := []struct{ key, desc string }{
+		{"j / k / arrow", "Move cursor down / up"},
+		{"enter", "Open bucket or folder"},
+		{"esc / backspace", "Go back"},
+		{"G", "Jump to top of list"},
+		{"g", "Jump to bottom of list"},
+		{"yy", "Copy S3 path to clipboard"},
+		{"pgup / pgdown", "Page up / down"},
+		{"?", "Toggle this help"},
+		{"q / ctrl+c", "Quit"},
+	}
+
+	var rows []string
+	for _, k := range keys {
+		row := lipgloss.JoinHorizontal(lipgloss.Top,
+			helpKeyStyle.Render(k.key),
+			helpDescStyle.Render(k.desc),
+		)
+		rows = append(rows, row)
+	}
+
+	title := helpTitleStyle.Render("Keyboard Shortcuts")
+	content := title + "\n" + strings.Join(rows, "\n")
+
+	footer := lipgloss.NewStyle().
+		Foreground(darkSlate).
+		Italic(true).
+		MarginTop(1).
+		Render("Press esc to close")
+
+	content += "\n" + footer
+
+	effectiveBoxWidth := boxWidth
+	if w > 0 && w < effectiveBoxWidth+4 {
+		effectiveBoxWidth = w - 4
+	}
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(purple).
+		Padding(1, 2).
+		Width(effectiveBoxWidth)
+
+	rendered := box.Render(content)
+
+	return lipgloss.Place(
+		w, m.height,
+		lipgloss.Center, lipgloss.Center,
+		rendered,
+	)
+}
+
 func (m model) renderFooter(b *strings.Builder, viewportHeight int) {
 	listLen := len(m.buckets)
 	if m.state == fileList {
@@ -247,6 +330,7 @@ func (m model) renderFooter(b *strings.Builder, viewportHeight int) {
 			{"yy", "copy path"},
 			{"G/g", "top/bottom"},
 			{"q", "quit"},
+			{"?", "help"},
 		}
 		var hints []string
 		for _, k := range keys {
