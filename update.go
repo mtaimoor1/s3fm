@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -43,12 +44,7 @@ func copyToClipboard(text string) error {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	const headerHeight = 4
-	const footerHeight = 3
-	viewportHeight := m.height - headerHeight - footerHeight
-	if viewportHeight < 1 {
-		viewportHeight = 1
-	}
+	viewportHeight := m.viewportHeight()
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -282,9 +278,12 @@ func (m model) handleSearchInput(key string, viewportHeight int) (tea.Model, tea
 		return m, nil
 	default:
 		// Append printable characters to query
-		if len(key) == 1 && key[0] >= 32 && key[0] < 127 {
-			m.searchQuery += key
-			m = m.recomputeSearchMatches()
+		if utf8.RuneCountInString(key) == 1 {
+			r, _ := utf8.DecodeRuneInString(key)
+			if unicode.IsPrint(r) {
+				m.searchQuery += key
+				m = m.recomputeSearchMatches()
+			}
 		}
 		return m, nil
 	}

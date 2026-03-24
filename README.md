@@ -33,7 +33,7 @@ go build -o s3fm .
 |------------|-----------------|-----------------------------------------------------------------------------|
 | `--bucket`  | *(none)*        | The S3 bucket to start in. If omitted, s3fm opens a bucket selection view. |
 | `--region`  | `us-east-1`     | The AWS region to use.                                                      |
-| `--profile` | `vendor-feed`   | The AWS profile to use for credentials.                                     |
+| `--profile` | `default`       | The AWS profile to use for credentials.                                     |
 
 ## Keyboard Controls
 

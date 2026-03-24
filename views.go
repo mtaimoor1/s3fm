@@ -93,9 +93,6 @@ var (
 			PaddingLeft(4)
 )
 
-const headerHeight = 4 // title bar + breadcrumb + blank line + blank
-const footerHeight = 3 // blank + status bar + scroll info
-
 func (m model) View() string {
 	w := m.width
 	if w == 0 {
@@ -109,10 +106,7 @@ func (m model) View() string {
 		return fmt.Sprintf("\n%s\n\n%s\n", box, hint)
 	}
 
-	viewportHeight := m.height - headerHeight - footerHeight
-	if viewportHeight < 1 {
-		viewportHeight = 1
-	}
+	viewportHeight := m.viewportHeight()
 
 	var b strings.Builder
 
@@ -182,9 +176,6 @@ func (m model) renderFileHeader(b *strings.Builder, w int) {
 	crumb := lipgloss.JoinHorizontal(lipgloss.Left, parts...)
 	count := countStyle.Render(fmt.Sprintf("(%d items)", len(m.files)))
 
-	// Truncate if needed
-	crumbLine := crumb + count
-	_ = crumbLine
 	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Left, crumb, count) + "\n\n")
 }
 

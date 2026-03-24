@@ -33,6 +33,16 @@ type model struct {
 	searchCursor  int
 }
 
+func (m model) viewportHeight() int {
+	const headerHeight = 4
+	const footerHeight = 3
+	h := m.height - headerHeight - footerHeight
+	if h < 1 {
+		return 1
+	}
+	return h
+}
+
 func (m model) Init() tea.Cmd {
 	return func() tea.Msg {
 		s3Con, err := newS3Con(m.profile, m.region)
