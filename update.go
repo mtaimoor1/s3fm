@@ -134,6 +134,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.yOffset = 0
 				}
 			}
+		case "G":
+			m.cursor = 0
+			m.yOffset = 0
+		case "g":
+			listLen := 0
+			if m.state == bucketList {
+				listLen = len(m.buckets)
+			} else {
+				listLen = len(m.files)
+			}
+			if listLen > 0 {
+				m.cursor = listLen - 1
+				if m.cursor >= m.yOffset+viewportHeight {
+					m.yOffset = m.cursor - viewportHeight + 1
+				}
+			}
 		case "pgup":
 			m.cursor -= viewportHeight
 			if m.cursor < 0 {
