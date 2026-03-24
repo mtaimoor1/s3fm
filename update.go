@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -26,7 +27,17 @@ func clearStatusAfter(d time.Duration) tea.Cmd {
 }
 
 func copyToClipboard(text string) error {
-	cmd := exec.Command("pbcopy")
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("pbcopy")
+	case "linux":
+		cmd = exec.Command("xclip", "-selection", "clipboard")
+	case "windows":
+		cmd = exec.Command("clip")
+	default:
+		return fmt.Errorf("clipboard not supported on %s", runtime.GOOS)
+	}
 	cmd.Stdin = strings.NewReader(text)
 	return cmd.Run()
 }
@@ -115,7 +126,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.searchQuery = ""
 			m.searchMatches = nil
 			m.searchCursor = 0
-			m.recomputeSearchMatches()
+			m = m.recomputeSearchMatches()
 			return m, nil
 		case "?":
 			m.showHelp = true
@@ -235,7 +246,7 @@ func (m model) handleSearchInput(key string, viewportHeight int) (tea.Model, tea
 		return m, nil
 	case "enter":
 		// Confirm search and navigate into the matched item
-		if len(m.searchMatches) > 0 {
+		if len(m.searchMatches) > 0 && m.searchCursor < len(m.searchMatches) {
 			realIdx := m.searchMatches[m.searchCursor]
 			m.cursor = realIdx
 			// Adjust yOffset so cursor is visible
@@ -256,7 +267,7 @@ func (m model) handleSearchInput(key string, viewportHeight int) (tea.Model, tea
 		if len(m.searchQuery) > 0 {
 			_, size := utf8.DecodeLastRuneInString(m.searchQuery)
 			m.searchQuery = m.searchQuery[:len(m.searchQuery)-size]
-			m.recomputeSearchMatches()
+			m = m.recomputeSearchMatches()
 		}
 		return m, nil
 	case "up", "ctrl+p":
@@ -273,7 +284,7 @@ func (m model) handleSearchInput(key string, viewportHeight int) (tea.Model, tea
 		// Append printable characters to query
 		if len(key) == 1 && key[0] >= 32 && key[0] < 127 {
 			m.searchQuery += key
-			m.recomputeSearchMatches()
+			m = m.recomputeSearchMatches()
 		}
 		return m, nil
 	}
@@ -318,7 +329,7 @@ func (m model) handleEnter(viewportHeight int) (tea.Model, tea.Cmd) {
 }
 
 // recomputeSearchMatches filters the current list by the search query.
-func (m *model) recomputeSearchMatches() {
+func (m model) recomputeSearchMatches() model {
 	m.searchMatches = nil
 	m.searchCursor = 0
 
@@ -335,6 +346,7 @@ func (m *model) recomputeSearchMatches() {
 			m.searchMatches = append(m.searchMatches, i)
 		}
 	}
+	return m
 }
 
 // buildS3Path constructs the full s3:// URI for the item under the cursor.

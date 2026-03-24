@@ -67,7 +67,7 @@ func (s *s3Con) listPrefix(bucket string, prefix string) ([]string, error) {
 		for _, v := range out.CommonPrefixes {
 			result = append(result, strings.TrimPrefix(aws.ToString(v.Prefix), prefix))
 		}
-		if !*out.IsTruncated {
+		if out.IsTruncated == nil || !*out.IsTruncated {
 			break
 		}
 		token = out.NextContinuationToken
