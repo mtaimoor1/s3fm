@@ -235,19 +235,25 @@ func (m model) renderFooter(b *strings.Builder, viewportHeight int) {
 
 	b.WriteString("\n")
 
-	// Key hints
-	keys := []struct{ key, desc string }{
-		{"j/k", "navigate"},
-		{"enter", "open"},
-		{"esc", "back"},
-		{"G/g", "top/bottom"},
-		{"q", "quit"},
+	// Status message (e.g. "Copied: s3://...") or key hints
+	if m.statusMsg != "" {
+		msgStyle := lipgloss.NewStyle().Foreground(green).Bold(true).PaddingLeft(2)
+		b.WriteString(msgStyle.Render(m.statusMsg) + "\n")
+	} else {
+		keys := []struct{ key, desc string }{
+			{"j/k", "navigate"},
+			{"enter", "open"},
+			{"esc", "back"},
+			{"yy", "copy path"},
+			{"G/g", "top/bottom"},
+			{"q", "quit"},
+		}
+		var hints []string
+		for _, k := range keys {
+			hints = append(hints, statusKeyStyle.Render(k.key)+" "+statusDescStyle.Render(k.desc))
+		}
+		b.WriteString(statusBarStyle.Render(strings.Join(hints, "  "+statusDescStyle.Render("|")+"  ")) + "\n")
 	}
-	var hints []string
-	for _, k := range keys {
-		hints = append(hints, statusKeyStyle.Render(k.key)+" "+statusDescStyle.Render(k.desc))
-	}
-	b.WriteString(statusBarStyle.Render(strings.Join(hints, "  "+statusDescStyle.Render("|")+"  ")) + "\n")
 
 	// Scroll position
 	if listLen > 0 {

@@ -1,7 +1,10 @@
 package main
 
 import (
+	"fmt"
+	"os/exec"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -11,6 +14,20 @@ type initMsg struct {
 	buckets []string
 	files   []string
 	err     error
+}
+
+type clearStatusMsg struct{}
+
+func clearStatusAfter(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg {
+		return clearStatusMsg{}
+	})
+}
+
+func copyToClipboard(text string) error {
+	cmd := exec.Command("pbcopy")
+	cmd.Stdin = strings.NewReader(text)
+	return cmd.Run()
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -25,6 +42,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
+	case clearStatusMsg:
+		m.statusMsg = ""
 
 	case initMsg:
 		if msg.err != nil {
@@ -50,7 +70,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-		switch msg.String() {
+		key := msg.String()
+
+		// Handle yy (two-press yank)
+		if key == "y" {
+			if m.pendingY {
+				// Second y — build S3 path and copy
+				m.pendingY = false
+				s3Path := m.buildS3Path()
+				if err := copyToClipboard(s3Path); err != nil {
+					m.statusMsg = "Failed to copy to clipboard"
+				} else {
+					m.statusMsg = fmt.Sprintf("Copied: %s", s3Path)
+				}
+				return m, clearStatusAfter(3 * time.Second)
+			}
+			// First y — set pending
+			m.pendingY = true
+			m.statusMsg = "y..."
+			return m, nil
+		}
+
+		// Any non-y key cancels pending y
+		m.pendingY = false
+		m.statusMsg = ""
+
+		switch key {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "up", "k":
@@ -178,4 +223,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// buildS3Path constructs the full s3:// URI for the item under the cursor.
+func (m model) buildS3Path() string {
+	if m.state == bucketList {
+		if m.cursor < len(m.buckets) {
+			return fmt.Sprintf("s3://%s", m.buckets[m.cursor])
+		}
+		return "s3://"
+	}
+	// fileList state
+	if m.cursor < len(m.files) {
+		return fmt.Sprintf("s3://%s/%s%s", m.currentBucket, m.currentPrefix, m.files[m.cursor])
+	}
+	return fmt.Sprintf("s3://%s/%s", m.currentBucket, m.currentPrefix)
 }

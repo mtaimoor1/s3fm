@@ -24,6 +24,8 @@ type model struct {
 	width         int
 	height        int
 	yOffset       int
+	pendingY      bool
+	statusMsg     string
 }
 
 func (m model) Init() tea.Cmd {
