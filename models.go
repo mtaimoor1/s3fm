@@ -34,8 +34,10 @@ type model struct {
 }
 
 func (m model) viewportHeight() int {
-	// title(1) + breadcrumb(1) + box borders(2) + footer bar(1) = 5
-	const chromeHeight = 5
+	// header box: logo(5) + divider(1) + breadcrumb(1) + borders(2) = 9
+	// list box borders(2) + footer(1) = 3
+	// total chrome = 12
+	const chromeHeight = 12
 	h := m.height - chromeHeight
 	if h < 1 {
 		return 1

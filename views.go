@@ -11,7 +11,6 @@ import (
 var (
 	purple    = lipgloss.Color("#7C3AED")
 	violet    = lipgloss.Color("#A78BFA")
-	indigo    = lipgloss.Color("#6366F1")
 	slate     = lipgloss.Color("#94A3B8")
 	darkSlate = lipgloss.Color("#475569")
 	white     = lipgloss.Color("#F8FAFC")
@@ -19,9 +18,6 @@ var (
 	green     = lipgloss.Color("#34D399")
 	amber     = lipgloss.Color("#FBBF24")
 	red       = lipgloss.Color("#F87171")
-	darkBg    = lipgloss.Color("#1E1B2E")
-	headerBg  = lipgloss.Color("#312E81")
-	footerBg  = lipgloss.Color("#1E1B2E")
 )
 
 // Styles
@@ -29,12 +25,6 @@ var (
 	logoStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(amber)
-
-	titleBarStyle = lipgloss.NewStyle().
-			Background(headerBg).
-			Foreground(white).
-			Bold(true).
-			Padding(0, 1)
 
 	breadcrumbStyle = lipgloss.NewStyle().
 			Foreground(slate)
@@ -60,13 +50,6 @@ var (
 	fileIcon        = lipgloss.NewStyle().Foreground(slate).Render("   ")
 	bucketIcon      = lipgloss.NewStyle().Foreground(green).Render("\U0001F4E6 ")
 	selectedPointer = lipgloss.NewStyle().Foreground(purple).Bold(true).Render("\u25B8 ")
-
-	statusKeyStyle = lipgloss.NewStyle().
-			Foreground(violet).
-			Bold(true)
-
-	statusDescStyle = lipgloss.NewStyle().
-			Foreground(slate)
 
 	countStyle = lipgloss.NewStyle().
 			Foreground(darkSlate)
@@ -104,8 +87,14 @@ func (m model) View() string {
 
 	vpHeight := m.viewportHeight()
 
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(darkSlate).
+		Width(w - 2)
+
 	// --- Header ---
-	header := m.renderHeader(w)
+	headerContent := m.renderHeader(w - 4) // account for box border + padding
+	headerBox := boxStyle.Render(headerContent)
 
 	// --- List content ---
 	var listContent string
@@ -117,19 +106,13 @@ func (m model) View() string {
 		listContent = m.renderFileContent(vpHeight)
 	}
 
-	// Wrap list in a bordered box
-	listBoxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(darkSlate).
-		Width(w - 2)
-
-	listBox := listBoxStyle.Render(listContent)
+	listBox := boxStyle.Render(listContent)
 
 	// --- Footer ---
 	footer := m.renderStatusBar(w)
 
 	// --- Compose full layout ---
-	view := lipgloss.JoinVertical(lipgloss.Left, header, listBox, footer)
+	view := lipgloss.JoinVertical(lipgloss.Left, headerBox, listBox, footer)
 
 	// --- Help overlay ---
 	if m.showHelp {
@@ -139,27 +122,65 @@ func (m model) View() string {
 	return view
 }
 
-// renderHeader renders the title bar and breadcrumb.
+// renderHeader renders the title bar and breadcrumb inside the header box.
 func (m model) renderHeader(w int) string {
-	logo := logoStyle.Render(" s3fm")
-	region := lipgloss.NewStyle().Foreground(slate).Render("  " + m.region)
-	titleContent := logo + region
+	// ASCII art logo
+	asciiLogo := []string{
+		"  ____  _____  ______ __  __ ",
+		" / ___||___ / |  ____|  \\/  |",
+		" \\___ \\  |_ \\ | |__  | \\  / |",
+		"  ___) |___) ||  __| | |\\/| |",
+		" |____/|____/ |_|    |_|  |_|",
+	}
 
-	titleBar := titleBarStyle.Width(w).Render(titleContent)
+	var logoLines []string
+	for _, line := range asciiLogo {
+		logoLines = append(logoLines, logoStyle.Render(line))
+	}
+	logo := strings.Join(logoLines, "\n")
+
+	// Info panel right-aligned
+	labelStyle := lipgloss.NewStyle().Foreground(violet).Bold(true)
+	valueStyle := lipgloss.NewStyle().Foreground(dimWhite)
+
+	regionLine := labelStyle.Render("Region  ") + valueStyle.Render(m.region)
+	profileLine := labelStyle.Render("Profile ") + valueStyle.Render(m.profile)
+
+	viewLabel := "Buckets"
+	if m.state == fileList {
+		viewLabel = m.currentBucket
+	}
+	viewLine := labelStyle.Render("View    ") + valueStyle.Render(viewLabel)
+
+	infoBlock := lipgloss.JoinVertical(lipgloss.Left,
+		regionLine,
+		profileLine,
+		viewLine,
+	)
+
+	// Join logo left, info right-aligned with gap fill
+	logoWidth := lipgloss.Width(logo)
+	infoWidth := lipgloss.Width(infoBlock)
+	gap := w - logoWidth - infoWidth
+	if gap < 2 {
+		gap = 2
+	}
+	headerTop := lipgloss.JoinHorizontal(lipgloss.Center, logo, strings.Repeat(" ", gap), infoBlock)
 
 	// Breadcrumb
+	divider := lipgloss.NewStyle().Foreground(darkSlate).Render(strings.Repeat("\u2500", w))
 	var crumb string
 	if m.state == bucketList {
-		label := breadcrumbActiveStyle.Render("  Buckets")
+		label := breadcrumbActiveStyle.Render(" Buckets")
 		cnt := countStyle.Render(fmt.Sprintf("  %d items", len(m.buckets)))
 		crumb = label + cnt
 	} else {
 		parts := []string{}
 		if m.startBucket == "" {
-			parts = append(parts, breadcrumbStyle.Render("  Buckets"))
+			parts = append(parts, breadcrumbStyle.Render(" Buckets"))
 			parts = append(parts, separatorStyle.Render(" \u203A "))
 		} else {
-			parts = append(parts, breadcrumbStyle.Render("  "))
+			parts = append(parts, breadcrumbStyle.Render(" "))
 		}
 		parts = append(parts, breadcrumbActiveStyle.Render(m.currentBucket))
 		if m.currentPrefix != "" {
@@ -173,7 +194,7 @@ func (m model) renderHeader(w int) string {
 		crumb = strings.Join(parts, "") + cnt
 	}
 
-	return titleBar + "\n" + crumb
+	return headerTop + "\n" + divider + "\n" + crumb
 }
 
 // padToHeight pads content with empty lines to exactly `height` lines.
@@ -291,7 +312,6 @@ func (m model) renderSearchContent(vpHeight int) string {
 // renderStatusBar renders the full-width footer bar pinned to the bottom.
 func (m model) renderStatusBar(w int) string {
 	barStyle := lipgloss.NewStyle().
-		Background(footerBg).
 		Foreground(slate).
 		Width(w).
 		Padding(0, 1)
@@ -299,17 +319,17 @@ func (m model) renderStatusBar(w int) string {
 	var left string
 
 	if m.searching {
-		prompt := lipgloss.NewStyle().Foreground(violet).Bold(true).Background(footerBg).Render("/")
-		query := lipgloss.NewStyle().Foreground(white).Background(footerBg).Render(m.searchQuery)
-		cursor := lipgloss.NewStyle().Foreground(violet).Bold(true).Background(footerBg).Render("\u2588")
+		prompt := lipgloss.NewStyle().Foreground(violet).Bold(true).Render("/")
+		query := lipgloss.NewStyle().Foreground(white).Render(m.searchQuery)
+		cursor := lipgloss.NewStyle().Foreground(violet).Bold(true).Render("\u2588")
 		matchInfo := ""
 		if m.searchQuery != "" {
-			matchInfo = lipgloss.NewStyle().Foreground(darkSlate).Background(footerBg).
+			matchInfo = lipgloss.NewStyle().Foreground(darkSlate).
 				Render(fmt.Sprintf("  %d match(es)", len(m.searchMatches)))
 		}
 		left = prompt + query + cursor + matchInfo
 	} else if m.statusMsg != "" {
-		left = lipgloss.NewStyle().Foreground(green).Bold(true).Background(footerBg).Render(m.statusMsg)
+		left = lipgloss.NewStyle().Foreground(green).Bold(true).Render(m.statusMsg)
 	} else {
 		keys := []struct{ key, desc string }{
 			{"j/k", "nav"},
@@ -322,10 +342,10 @@ func (m model) renderStatusBar(w int) string {
 			{"q", "quit"},
 		}
 		var hints []string
-		sep := lipgloss.NewStyle().Foreground(darkSlate).Background(footerBg).Render(" \u2502 ")
+		sep := lipgloss.NewStyle().Foreground(darkSlate).Render(" \u2502 ")
 		for _, k := range keys {
-			hint := lipgloss.NewStyle().Foreground(violet).Bold(true).Background(footerBg).Render(k.key) +
-				lipgloss.NewStyle().Foreground(slate).Background(footerBg).Render(" "+k.desc)
+			hint := lipgloss.NewStyle().Foreground(violet).Bold(true).Render(k.key) +
+				lipgloss.NewStyle().Foreground(slate).Render(" "+k.desc)
 			hints = append(hints, hint)
 		}
 		left = strings.Join(hints, sep)
@@ -348,7 +368,7 @@ func (m model) renderStatusBar(w int) string {
 			}
 			pos += fmt.Sprintf(" %d%%", pct)
 		}
-		right = lipgloss.NewStyle().Foreground(slate).Background(footerBg).Render(pos)
+		right = lipgloss.NewStyle().Foreground(slate).Render(pos)
 	}
 
 	// Fill middle space
