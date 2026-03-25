@@ -21,14 +21,14 @@ var (
 	red       = lipgloss.Color("#F87171")
 	darkBg    = lipgloss.Color("#1E1B2E")
 	headerBg  = lipgloss.Color("#312E81")
+	footerBg  = lipgloss.Color("#1E1B2E")
 )
 
 // Styles
 var (
 	logoStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(violet).
-			PaddingRight(1)
+			Foreground(amber)
 
 	titleBarStyle = lipgloss.NewStyle().
 			Background(headerBg).
@@ -37,48 +37,39 @@ var (
 			Padding(0, 1)
 
 	breadcrumbStyle = lipgloss.NewStyle().
-			Foreground(slate).
-			PaddingLeft(2)
+			Foreground(slate)
 
 	breadcrumbActiveStyle = lipgloss.NewStyle().
 				Foreground(violet).
 				Bold(true)
 
+	separatorStyle = lipgloss.NewStyle().
+			Foreground(darkSlate)
+
 	itemStyle = lipgloss.NewStyle().
 			Foreground(dimWhite).
-			PaddingLeft(2)
+			PaddingLeft(1)
 
 	selectedItemStyle = lipgloss.NewStyle().
 				Foreground(white).
 				Bold(true).
-				PaddingLeft(1).
-				BorderLeft(true).
-				BorderStyle(lipgloss.ThickBorder()).
-				BorderForeground(purple)
+				Background(lipgloss.Color("#2D2B55")).
+				PaddingLeft(1)
 
 	folderIcon      = lipgloss.NewStyle().Foreground(amber).Render("\U0001F4C1 ")
 	fileIcon        = lipgloss.NewStyle().Foreground(slate).Render("   ")
 	bucketIcon      = lipgloss.NewStyle().Foreground(green).Render("\U0001F4E6 ")
 	selectedPointer = lipgloss.NewStyle().Foreground(purple).Bold(true).Render("\u25B8 ")
 
-	statusBarStyle = lipgloss.NewStyle().
-			Foreground(darkSlate).
-			PaddingLeft(2)
-
 	statusKeyStyle = lipgloss.NewStyle().
 			Foreground(violet).
 			Bold(true)
 
 	statusDescStyle = lipgloss.NewStyle().
-			Foreground(darkSlate)
-
-	scrollIndicatorStyle = lipgloss.NewStyle().
-				Foreground(slate).
-				PaddingLeft(2)
+			Foreground(slate)
 
 	countStyle = lipgloss.NewStyle().
-			Foreground(slate).
-			PaddingLeft(2)
+			Foreground(darkSlate)
 
 	errorBoxStyle = lipgloss.NewStyle().
 			Foreground(red).
@@ -90,7 +81,7 @@ var (
 	emptyStyle = lipgloss.NewStyle().
 			Foreground(darkSlate).
 			Italic(true).
-			PaddingLeft(4)
+			PaddingLeft(2)
 )
 
 func (m model) View() string {
@@ -98,39 +89,47 @@ func (m model) View() string {
 	if w == 0 {
 		w = 80
 	}
+	h := m.height
+	if h == 0 {
+		h = 24
+	}
 
 	if m.err != nil {
 		errText := fmt.Sprintf("  Error: %v", m.err)
 		box := errorBoxStyle.Width(w - 6).Render(errText)
 		hint := lipgloss.NewStyle().Foreground(slate).PaddingLeft(2).Render("Press any key to quit.")
-		return fmt.Sprintf("\n%s\n\n%s\n", box, hint)
+		return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center,
+			fmt.Sprintf("%s\n\n%s", box, hint))
 	}
 
-	viewportHeight := m.viewportHeight()
-
-	var b strings.Builder
+	vpHeight := m.viewportHeight()
 
 	// --- Header ---
-	if m.state == bucketList {
-		m.renderBucketHeader(&b, w)
-		if m.searching {
-			m.renderSearchResults(&b, viewportHeight)
-		} else {
-			m.renderBucketList(&b, viewportHeight)
-		}
+	header := m.renderHeader(w)
+
+	// --- List content ---
+	var listContent string
+	if m.searching {
+		listContent = m.renderSearchContent(vpHeight)
+	} else if m.state == bucketList {
+		listContent = m.renderBucketContent(vpHeight)
 	} else {
-		m.renderFileHeader(&b, w)
-		if m.searching {
-			m.renderSearchResults(&b, viewportHeight)
-		} else {
-			m.renderFileList(&b, viewportHeight)
-		}
+		listContent = m.renderFileContent(vpHeight)
 	}
 
-	// --- Footer ---
-	m.renderFooter(&b, viewportHeight)
+	// Wrap list in a bordered box
+	listBoxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(darkSlate).
+		Width(w - 2)
 
-	view := b.String()
+	listBox := listBoxStyle.Render(listContent)
+
+	// --- Footer ---
+	footer := m.renderStatusBar(w)
+
+	// --- Compose full layout ---
+	view := lipgloss.JoinVertical(lipgloss.Left, header, listBox, footer)
 
 	// --- Help overlay ---
 	if m.showHelp {
@@ -140,53 +139,64 @@ func (m model) View() string {
 	return view
 }
 
-func (m model) renderBucketHeader(b *strings.Builder, w int) {
-	logo := logoStyle.Render("s3fm")
-	region := lipgloss.NewStyle().Foreground(slate).Render(m.region)
-	title := titleBarStyle.Width(w).Render(fmt.Sprintf("%s  %s", logo, region))
-	b.WriteString(title + "\n")
+// renderHeader renders the title bar and breadcrumb.
+func (m model) renderHeader(w int) string {
+	logo := logoStyle.Render(" s3fm")
+	region := lipgloss.NewStyle().Foreground(slate).Render("  " + m.region)
+	titleContent := logo + region
 
-	crumb := breadcrumbStyle.Render("Buckets")
-	count := countStyle.Render(fmt.Sprintf("(%d items)", len(m.buckets)))
-	b.WriteString(crumb + count + "\n\n")
-}
+	titleBar := titleBarStyle.Width(w).Render(titleContent)
 
-func (m model) renderFileHeader(b *strings.Builder, w int) {
-	logo := logoStyle.Render("s3fm")
-	region := lipgloss.NewStyle().Foreground(slate).Render(m.region)
-	title := titleBarStyle.Width(w).Render(fmt.Sprintf("%s  %s", logo, region))
-	b.WriteString(title + "\n")
-
-	// Breadcrumb: Buckets > bucket-name > path > parts
-	parts := []string{}
-	if m.startBucket == "" {
-		parts = append(parts, breadcrumbStyle.Render("Buckets"))
-		parts = append(parts, breadcrumbStyle.Render(" > "))
-	}
-	parts = append(parts, breadcrumbActiveStyle.Render(m.currentBucket))
-
-	if m.currentPrefix != "" {
-		segments := strings.Split(strings.TrimSuffix(m.currentPrefix, "/"), "/")
-		for _, seg := range segments {
-			parts = append(parts, breadcrumbStyle.Render(" > "))
-			parts = append(parts, breadcrumbActiveStyle.Render(seg))
+	// Breadcrumb
+	var crumb string
+	if m.state == bucketList {
+		label := breadcrumbActiveStyle.Render("  Buckets")
+		cnt := countStyle.Render(fmt.Sprintf("  %d items", len(m.buckets)))
+		crumb = label + cnt
+	} else {
+		parts := []string{}
+		if m.startBucket == "" {
+			parts = append(parts, breadcrumbStyle.Render("  Buckets"))
+			parts = append(parts, separatorStyle.Render(" \u203A "))
+		} else {
+			parts = append(parts, breadcrumbStyle.Render("  "))
 		}
+		parts = append(parts, breadcrumbActiveStyle.Render(m.currentBucket))
+		if m.currentPrefix != "" {
+			segments := strings.Split(strings.TrimSuffix(m.currentPrefix, "/"), "/")
+			for _, seg := range segments {
+				parts = append(parts, separatorStyle.Render(" \u203A "))
+				parts = append(parts, breadcrumbActiveStyle.Render(seg))
+			}
+		}
+		cnt := countStyle.Render(fmt.Sprintf("  %d items", len(m.files)))
+		crumb = strings.Join(parts, "") + cnt
 	}
 
-	crumb := lipgloss.JoinHorizontal(lipgloss.Left, parts...)
-	count := countStyle.Render(fmt.Sprintf("(%d items)", len(m.files)))
-
-	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Left, crumb, count) + "\n\n")
+	return titleBar + "\n" + crumb
 }
 
-func (m model) renderBucketList(b *strings.Builder, viewportHeight int) {
+// padToHeight pads content with empty lines to exactly `height` lines.
+func padToHeight(content string, height int) string {
+	lines := strings.Split(content, "\n")
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// renderBucketContent returns the bucket list content padded to viewport height.
+func (m model) renderBucketContent(vpHeight int) string {
 	if len(m.buckets) == 0 {
-		b.WriteString(emptyStyle.Render("No buckets found.") + "\n")
-		return
+		return padToHeight(emptyStyle.Render("No buckets found."), vpHeight)
 	}
 
+	var lines []string
 	start := m.yOffset
-	end := start + viewportHeight
+	end := start + vpHeight
 	if end > len(m.buckets) {
 		end = len(m.buckets)
 	}
@@ -194,23 +204,24 @@ func (m model) renderBucketList(b *strings.Builder, viewportHeight int) {
 	for i := start; i < end; i++ {
 		name := m.buckets[i]
 		if m.cursor == i {
-			line := selectedItemStyle.Render(fmt.Sprintf("%s%s%s", selectedPointer, bucketIcon, name))
-			b.WriteString(line + "\n")
+			lines = append(lines, selectedItemStyle.Render(fmt.Sprintf("%s%s%s", selectedPointer, bucketIcon, name)))
 		} else {
-			line := itemStyle.Render(fmt.Sprintf("  %s%s", bucketIcon, name))
-			b.WriteString(line + "\n")
+			lines = append(lines, itemStyle.Render(fmt.Sprintf("  %s%s", bucketIcon, name)))
 		}
 	}
+
+	return padToHeight(strings.Join(lines, "\n"), vpHeight)
 }
 
-func (m model) renderFileList(b *strings.Builder, viewportHeight int) {
+// renderFileContent returns the file list content padded to viewport height.
+func (m model) renderFileContent(vpHeight int) string {
 	if len(m.files) == 0 {
-		b.WriteString(emptyStyle.Render("This directory is empty.") + "\n")
-		return
+		return padToHeight(emptyStyle.Render("This directory is empty."), vpHeight)
 	}
 
+	var lines []string
 	start := m.yOffset
-	end := start + viewportHeight
+	end := start + vpHeight
 	if end > len(m.files) {
 		end = len(m.files)
 	}
@@ -224,19 +235,19 @@ func (m model) renderFileList(b *strings.Builder, viewportHeight int) {
 		}
 
 		if m.cursor == i {
-			line := selectedItemStyle.Render(fmt.Sprintf("%s%s%s", selectedPointer, icon, name))
-			b.WriteString(line + "\n")
+			lines = append(lines, selectedItemStyle.Render(fmt.Sprintf("%s%s%s", selectedPointer, icon, name)))
 		} else {
-			line := itemStyle.Render(fmt.Sprintf("  %s%s", icon, name))
-			b.WriteString(line + "\n")
+			lines = append(lines, itemStyle.Render(fmt.Sprintf("  %s%s", icon, name)))
 		}
 	}
+
+	return padToHeight(strings.Join(lines, "\n"), vpHeight)
 }
 
-func (m model) renderSearchResults(b *strings.Builder, viewportHeight int) {
+// renderSearchContent returns the search results padded to viewport height.
+func (m model) renderSearchContent(vpHeight int) string {
 	if len(m.searchMatches) == 0 {
-		b.WriteString(emptyStyle.Render("No matches found.") + "\n")
-		return
+		return padToHeight(emptyStyle.Render("No matches found."), vpHeight)
 	}
 
 	var list []string
@@ -246,11 +257,12 @@ func (m model) renderSearchResults(b *strings.Builder, viewportHeight int) {
 		list = m.files
 	}
 
+	var lines []string
 	start := 0
-	if m.searchCursor >= viewportHeight {
-		start = m.searchCursor - viewportHeight + 1
+	if m.searchCursor >= vpHeight {
+		start = m.searchCursor - vpHeight + 1
 	}
-	end := start + viewportHeight
+	end := start + vpHeight
 	if end > len(m.searchMatches) {
 		end = len(m.searchMatches)
 	}
@@ -258,7 +270,6 @@ func (m model) renderSearchResults(b *strings.Builder, viewportHeight int) {
 	for i := start; i < end; i++ {
 		realIdx := m.searchMatches[i]
 		name := list[realIdx]
-
 		isDir := strings.HasSuffix(name, "/")
 		icon := fileIcon
 		if m.state == bucketList {
@@ -268,13 +279,90 @@ func (m model) renderSearchResults(b *strings.Builder, viewportHeight int) {
 		}
 
 		if i == m.searchCursor {
-			line := selectedItemStyle.Render(fmt.Sprintf("%s%s%s", selectedPointer, icon, name))
-			b.WriteString(line + "\n")
+			lines = append(lines, selectedItemStyle.Render(fmt.Sprintf("%s%s%s", selectedPointer, icon, name)))
 		} else {
-			line := itemStyle.Render(fmt.Sprintf("  %s%s", icon, name))
-			b.WriteString(line + "\n")
+			lines = append(lines, itemStyle.Render(fmt.Sprintf("  %s%s", icon, name)))
 		}
 	}
+
+	return padToHeight(strings.Join(lines, "\n"), vpHeight)
+}
+
+// renderStatusBar renders the full-width footer bar pinned to the bottom.
+func (m model) renderStatusBar(w int) string {
+	barStyle := lipgloss.NewStyle().
+		Background(footerBg).
+		Foreground(slate).
+		Width(w).
+		Padding(0, 1)
+
+	var left string
+
+	if m.searching {
+		prompt := lipgloss.NewStyle().Foreground(violet).Bold(true).Background(footerBg).Render("/")
+		query := lipgloss.NewStyle().Foreground(white).Background(footerBg).Render(m.searchQuery)
+		cursor := lipgloss.NewStyle().Foreground(violet).Bold(true).Background(footerBg).Render("\u2588")
+		matchInfo := ""
+		if m.searchQuery != "" {
+			matchInfo = lipgloss.NewStyle().Foreground(darkSlate).Background(footerBg).
+				Render(fmt.Sprintf("  %d match(es)", len(m.searchMatches)))
+		}
+		left = prompt + query + cursor + matchInfo
+	} else if m.statusMsg != "" {
+		left = lipgloss.NewStyle().Foreground(green).Bold(true).Background(footerBg).Render(m.statusMsg)
+	} else {
+		keys := []struct{ key, desc string }{
+			{"j/k", "nav"},
+			{"enter", "open"},
+			{"esc", "back"},
+			{"yy", "copy"},
+			{"/", "search"},
+			{"G/g", "top/btm"},
+			{"?", "help"},
+			{"q", "quit"},
+		}
+		var hints []string
+		sep := lipgloss.NewStyle().Foreground(darkSlate).Background(footerBg).Render(" \u2502 ")
+		for _, k := range keys {
+			hint := lipgloss.NewStyle().Foreground(violet).Bold(true).Background(footerBg).Render(k.key) +
+				lipgloss.NewStyle().Foreground(slate).Background(footerBg).Render(" "+k.desc)
+			hints = append(hints, hint)
+		}
+		left = strings.Join(hints, sep)
+	}
+
+	// Right side: position indicator
+	listLen := len(m.buckets)
+	if m.state == fileList {
+		listLen = len(m.files)
+	}
+
+	var right string
+	if listLen > 0 {
+		pos := fmt.Sprintf("%d/%d", m.cursor+1, listLen)
+		vpHeight := m.viewportHeight()
+		if m.yOffset > 0 || m.yOffset+vpHeight < listLen {
+			pct := 0
+			if listLen > 1 {
+				pct = m.cursor * 100 / (listLen - 1)
+			}
+			pos += fmt.Sprintf(" %d%%", pct)
+		}
+		right = lipgloss.NewStyle().Foreground(slate).Background(footerBg).Render(pos)
+	}
+
+	// Fill middle space
+	leftWidth := lipgloss.Width(left)
+	rightWidth := lipgloss.Width(right)
+	innerWidth := w - 2 // account for bar padding
+	gap := innerWidth - leftWidth - rightWidth
+	if gap < 1 {
+		gap = 1
+	}
+	filler := strings.Repeat(" ", gap)
+
+	content := left + filler + right
+	return barStyle.Render(content)
 }
 
 func (m model) renderHelpOverlay(w int) string {
@@ -352,59 +440,4 @@ func (m model) renderHelpOverlay(w int) string {
 		lipgloss.Center, lipgloss.Center,
 		rendered,
 	)
-}
-
-func (m model) renderFooter(b *strings.Builder, viewportHeight int) {
-	listLen := len(m.buckets)
-	if m.state == fileList {
-		listLen = len(m.files)
-	}
-
-	b.WriteString("\n")
-
-	// Search prompt, status message, or key hints
-	if m.searching {
-		promptStyle := lipgloss.NewStyle().Foreground(violet).Bold(true).PaddingLeft(2)
-		queryStyle := lipgloss.NewStyle().Foreground(white)
-		cursorChar := lipgloss.NewStyle().Foreground(violet).Bold(true).Render("\u2588")
-		matchInfo := ""
-		if m.searchQuery != "" {
-			matchInfo = statusDescStyle.Render(fmt.Sprintf("  %d match(es)", len(m.searchMatches)))
-		}
-		b.WriteString(promptStyle.Render("/") + queryStyle.Render(m.searchQuery) + cursorChar + matchInfo + "\n")
-	} else if m.statusMsg != "" {
-		msgStyle := lipgloss.NewStyle().Foreground(green).Bold(true).PaddingLeft(2)
-		b.WriteString(msgStyle.Render(m.statusMsg) + "\n")
-	} else {
-		keys := []struct{ key, desc string }{
-			{"j/k", "navigate"},
-			{"enter", "open"},
-			{"esc", "back"},
-			{"yy", "copy path"},
-			{"/", "search"},
-			{"G/g", "top/bottom"},
-			{"q", "quit"},
-			{"?", "help"},
-		}
-		var hints []string
-		for _, k := range keys {
-			hints = append(hints, statusKeyStyle.Render(k.key)+" "+statusDescStyle.Render(k.desc))
-		}
-		b.WriteString(statusBarStyle.Render(strings.Join(hints, "  "+statusDescStyle.Render("|")+"  ")) + "\n")
-	}
-
-	// Scroll position
-	if listLen > 0 {
-		pos := fmt.Sprintf("%d/%d", m.cursor+1, listLen)
-		scrollInfo := scrollIndicatorStyle.Render(pos)
-
-		if m.yOffset > 0 || m.yOffset+viewportHeight < listLen {
-			pct := 0
-			if listLen > 1 {
-				pct = m.cursor * 100 / (listLen - 1)
-			}
-			scrollInfo += statusDescStyle.Render(fmt.Sprintf("  %d%%", pct))
-		}
-		b.WriteString(scrollInfo)
-	}
 }
