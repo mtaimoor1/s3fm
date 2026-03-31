@@ -4,11 +4,19 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
+
+type fileItem struct {
+	name         string
+	size         int64
+	lastModified time.Time
+	isDir        bool
+}
 
 type s3Con struct {
 	ctx    context.Context
@@ -54,9 +62,9 @@ func (s *s3Con) listBucket() ([]string, error) {
 	return result, nil
 }
 
-func (s *s3Con) listPrefix(bucket string, prefix string) ([]string, error) {
+func (s *s3Con) listPrefix(bucket string, prefix string) ([]fileItem, error) {
 	var token *string
-	var result []string
+	var result []fileItem
 
 	for {
 		param := &s3.ListObjectsV2Input{
@@ -70,11 +78,26 @@ func (s *s3Con) listPrefix(bucket string, prefix string) ([]string, error) {
 			return nil, fmt.Errorf("unable to list prefix %s: %w", prefix, err)
 		}
 
-		for _, v := range out.Contents {
-			result = append(result, strings.TrimPrefix(aws.ToString(v.Key), prefix))
-		}
 		for _, v := range out.CommonPrefixes {
-			result = append(result, strings.TrimPrefix(aws.ToString(v.Prefix), prefix))
+			result = append(result, fileItem{
+				name:  strings.TrimPrefix(aws.ToString(v.Prefix), prefix),
+				isDir: true,
+			})
+		}
+		for _, v := range out.Contents {
+			name := strings.TrimPrefix(aws.ToString(v.Key), prefix)
+			if name == "" {
+				continue
+			}
+			var modTime time.Time
+			if v.LastModified != nil {
+				modTime = *v.LastModified
+			}
+			result = append(result, fileItem{
+				name:         name,
+				size:         aws.ToInt64(v.Size),
+				lastModified: modTime,
+			})
 		}
 		if out.IsTruncated == nil || !*out.IsTruncated {
 			break

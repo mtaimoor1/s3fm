@@ -7,6 +7,20 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// formatSize returns a human-readable file size string.
+func formatSize(bytes int64) string {
+	switch {
+	case bytes >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(1<<30))
+	case bytes >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(1<<20))
+	case bytes >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(1<<10))
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
+}
+
 // Color palette
 var (
 	purple    = lipgloss.Color("#7C3AED")
@@ -234,11 +248,60 @@ func (m model) renderBucketContent(vpHeight int) string {
 	return padToHeight(strings.Join(lines, "\n"), vpHeight)
 }
 
+// renderFileRow renders a single file/folder row with metadata right-aligned.
+func (m model) renderFileRow(f fileItem, selected bool, w int) string {
+	icon := fileIcon
+	if f.isDir {
+		icon = folderIcon
+	}
+
+	var leftPart string
+	if selected {
+		leftPart = fmt.Sprintf("%s%s%s", selectedPointer, icon, f.name)
+	} else {
+		leftPart = fmt.Sprintf("  %s%s", icon, f.name)
+	}
+
+	// Build metadata string for files (not directories)
+	metaStyle := lipgloss.NewStyle().Foreground(darkSlate)
+	var meta string
+	if !f.isDir {
+		size := formatSize(f.size)
+		date := f.lastModified.Format("Jan 02 2006 15:04")
+		meta = metaStyle.Render(fmt.Sprintf("%s  %s", size, date))
+	}
+
+	if meta == "" {
+		if selected {
+			return selectedItemStyle.Render(leftPart)
+		}
+		return itemStyle.Render(leftPart)
+	}
+
+	// Calculate gap to right-align metadata
+	// w is the inner content width of the box
+	leftWidth := lipgloss.Width(leftPart)
+	metaWidth := lipgloss.Width(meta)
+	padding := w - leftWidth - metaWidth - 2 // 2 for item padding
+	if padding < 2 {
+		padding = 2
+	}
+
+	full := leftPart + strings.Repeat(" ", padding) + meta
+	if selected {
+		return selectedItemStyle.Render(full)
+	}
+	return itemStyle.Render(full)
+}
+
 // renderFileContent returns the file list content padded to viewport height.
 func (m model) renderFileContent(vpHeight int) string {
 	if len(m.files) == 0 {
 		return padToHeight(emptyStyle.Render("This directory is empty."), vpHeight)
 	}
+
+	// Inner width of the list box (box width - 2 borders)
+	innerW := m.width - 4
 
 	var lines []string
 	start := m.yOffset
@@ -248,18 +311,7 @@ func (m model) renderFileContent(vpHeight int) string {
 	}
 
 	for i := start; i < end; i++ {
-		name := m.files[i]
-		isDir := strings.HasSuffix(name, "/")
-		icon := fileIcon
-		if isDir {
-			icon = folderIcon
-		}
-
-		if m.cursor == i {
-			lines = append(lines, selectedItemStyle.Render(fmt.Sprintf("%s%s%s", selectedPointer, icon, name)))
-		} else {
-			lines = append(lines, itemStyle.Render(fmt.Sprintf("  %s%s", icon, name)))
-		}
+		lines = append(lines, m.renderFileRow(m.files[i], m.cursor == i, innerW))
 	}
 
 	return padToHeight(strings.Join(lines, "\n"), vpHeight)
@@ -271,12 +323,7 @@ func (m model) renderSearchContent(vpHeight int) string {
 		return padToHeight(emptyStyle.Render("No matches found."), vpHeight)
 	}
 
-	var list []string
-	if m.state == bucketList {
-		list = m.buckets
-	} else {
-		list = m.files
-	}
+	innerW := m.width - 4
 
 	var lines []string
 	start := 0
@@ -290,19 +337,17 @@ func (m model) renderSearchContent(vpHeight int) string {
 
 	for i := start; i < end; i++ {
 		realIdx := m.searchMatches[i]
-		name := list[realIdx]
-		isDir := strings.HasSuffix(name, "/")
-		icon := fileIcon
-		if m.state == bucketList {
-			icon = bucketIcon
-		} else if isDir {
-			icon = folderIcon
-		}
+		selected := i == m.searchCursor
 
-		if i == m.searchCursor {
-			lines = append(lines, selectedItemStyle.Render(fmt.Sprintf("%s%s%s", selectedPointer, icon, name)))
+		if m.state == fileList {
+			lines = append(lines, m.renderFileRow(m.files[realIdx], selected, innerW))
 		} else {
-			lines = append(lines, itemStyle.Render(fmt.Sprintf("  %s%s", icon, name)))
+			name := m.buckets[realIdx]
+			if selected {
+				lines = append(lines, selectedItemStyle.Render(fmt.Sprintf("%s%s%s", selectedPointer, bucketIcon, name)))
+			} else {
+				lines = append(lines, itemStyle.Render(fmt.Sprintf("  %s%s", bucketIcon, name)))
+			}
 		}
 	}
 

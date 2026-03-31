@@ -15,7 +15,7 @@ import (
 type initMsg struct {
 	client  *s3Con
 	buckets []string
-	files   []string
+	files   []fileItem
 	err     error
 }
 
@@ -311,8 +311,8 @@ func (m model) handleEnter(viewportHeight int) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		selected := m.files[m.cursor]
-		if strings.HasSuffix(selected, "/") {
-			newPrefix := m.currentPrefix + selected
+		if selected.isDir {
+			newPrefix := m.currentPrefix + selected.name
 			files, err := m.s3Client.listPrefix(m.currentBucket, newPrefix)
 			if err != nil {
 				m.err = err
@@ -332,17 +332,18 @@ func (m model) recomputeSearchMatches() model {
 	m.searchMatches = nil
 	m.searchCursor = 0
 
-	var list []string
-	if m.state == bucketList {
-		list = m.buckets
-	} else {
-		list = m.files
-	}
-
 	query := strings.ToLower(m.searchQuery)
-	for i, item := range list {
-		if query == "" || strings.Contains(strings.ToLower(item), query) {
-			m.searchMatches = append(m.searchMatches, i)
+	if m.state == bucketList {
+		for i, item := range m.buckets {
+			if query == "" || strings.Contains(strings.ToLower(item), query) {
+				m.searchMatches = append(m.searchMatches, i)
+			}
+		}
+	} else {
+		for i, item := range m.files {
+			if query == "" || strings.Contains(strings.ToLower(item.name), query) {
+				m.searchMatches = append(m.searchMatches, i)
+			}
 		}
 	}
 	return m
@@ -358,7 +359,7 @@ func (m model) buildS3Path() string {
 	}
 	// fileList state
 	if m.cursor < len(m.files) {
-		return fmt.Sprintf("s3://%s/%s%s", m.currentBucket, m.currentPrefix, m.files[m.cursor])
+		return fmt.Sprintf("s3://%s/%s%s", m.currentBucket, m.currentPrefix, m.files[m.cursor].name)
 	}
 	return fmt.Sprintf("s3://%s/%s", m.currentBucket, m.currentPrefix)
 }

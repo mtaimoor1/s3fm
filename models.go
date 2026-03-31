@@ -15,7 +15,7 @@ type model struct {
 	startBucket   string
 	s3Client      *s3Con
 	buckets       []string
-	files         []string
+	files         []fileItem
 	cursor        int
 	state         sessionState
 	currentBucket string
