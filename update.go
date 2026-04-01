@@ -44,7 +44,7 @@ func copyToClipboard(text string) error {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	viewportHeight := m.viewportHeight()
+	viewportHeight := m.visibleRows()
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:

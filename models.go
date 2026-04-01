@@ -45,6 +45,19 @@ func (m model) viewportHeight() int {
 	return h
 }
 
+// visibleRows returns the number of scrollable data rows in the list box.
+// In file list view the grid header+divider take 2 lines from the viewport.
+func (m model) visibleRows() int {
+	vp := m.viewportHeight()
+	if m.state == fileList {
+		vp -= 2 // grid header + divider
+		if vp < 1 {
+			return 1
+		}
+	}
+	return vp
+}
+
 func (m model) Init() tea.Cmd {
 	return func() tea.Msg {
 		s3Con, err := newS3Con(m.profile, m.region)

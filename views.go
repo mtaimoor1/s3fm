@@ -61,7 +61,7 @@ var (
 				PaddingLeft(1)
 
 	folderIcon      = lipgloss.NewStyle().Foreground(amber).Render("\U0001F4C1 ")
-	fileIcon        = lipgloss.NewStyle().Foreground(slate).Render("   ")
+	fileIcon        = lipgloss.NewStyle().Foreground(slate).Render("\U0001F4C4 ")
 	bucketIcon      = lipgloss.NewStyle().Foreground(green).Render("\U0001F4E6 ")
 	selectedPointer = lipgloss.NewStyle().Foreground(purple).Bold(true).Render("\u25B8 ")
 
@@ -248,64 +248,113 @@ func (m model) renderBucketContent(vpHeight int) string {
 	return padToHeight(strings.Join(lines, "\n"), vpHeight)
 }
 
-// renderFileRow renders a single file/folder row with metadata right-aligned.
-func (m model) renderFileRow(f fileItem, selected bool, w int) string {
+// Grid column widths
+const (
+	sizeColWidth = 10
+	dateColWidth = 18
+)
+
+// renderGridHeader renders the column header row and divider for the file grid.
+func (m model) renderGridHeader(innerW int) string {
+	headingStyle := lipgloss.NewStyle().Foreground(violet).Bold(true)
+	divStyle := lipgloss.NewStyle().Foreground(darkSlate)
+
+	nameW := innerW - sizeColWidth - dateColWidth - 4 // 4 for spacing between cols
+	if nameW < 10 {
+		nameW = 10
+	}
+
+	nameCol := headingStyle.Width(nameW).Render("      Name")
+	sizeCol := headingStyle.Width(sizeColWidth).Align(lipgloss.Right).Render("Size")
+	dateCol := headingStyle.Width(dateColWidth).Align(lipgloss.Right).Render("Modified")
+
+	header := nameCol + "  " + sizeCol + "  " + dateCol
+	divider := divStyle.Render(strings.Repeat("\u2500", innerW))
+
+	return header + "\n" + divider
+}
+
+// renderFileRow renders a single file/folder row with columns aligned to the grid.
+func (m model) renderFileRow(f fileItem, selected bool, innerW int) string {
 	icon := fileIcon
 	if f.isDir {
 		icon = folderIcon
 	}
 
-	var leftPart string
+	var pointer string
 	if selected {
-		leftPart = fmt.Sprintf("%s%s%s", selectedPointer, icon, f.name)
+		pointer = selectedPointer
 	} else {
-		leftPart = fmt.Sprintf("  %s%s", icon, f.name)
+		pointer = "  "
 	}
 
-	// Build metadata string for files (not directories)
+	nameW := innerW - sizeColWidth - dateColWidth - 4
+	if nameW < 10 {
+		nameW = 10
+	}
+
+	// Truncate name if too long (account for pointer + icon width ~4-5 chars)
+	displayName := f.name
+	maxName := nameW - 6
+	if maxName < 4 {
+		maxName = 4
+	}
+	if len(displayName) > maxName {
+		displayName = displayName[:maxName-1] + "\u2026"
+	}
+
+	nameStr := fmt.Sprintf("%s%s%s", pointer, icon, displayName)
+
+	var sizeStr, dateStr string
 	metaStyle := lipgloss.NewStyle().Foreground(darkSlate)
-	var meta string
 	if !f.isDir {
-		size := formatSize(f.size)
-		date := f.lastModified.Format("Jan 02 2006 15:04")
-		meta = metaStyle.Render(fmt.Sprintf("%s  %s", size, date))
+		sizeStr = metaStyle.Width(sizeColWidth).Align(lipgloss.Right).Render(formatSize(f.size))
+		dateStr = metaStyle.Width(dateColWidth).Align(lipgloss.Right).Render(f.lastModified.Format("Jan 02 2006 15:04"))
+	} else {
+		sizeStr = metaStyle.Width(sizeColWidth).Align(lipgloss.Right).Render("\u2500")
+		dateStr = metaStyle.Width(dateColWidth).Align(lipgloss.Right).Render("\u2500")
 	}
 
-	if meta == "" {
-		if selected {
-			return selectedItemStyle.Render(leftPart)
-		}
-		return itemStyle.Render(leftPart)
+	// Pad name column to fixed width
+	nameRenderedWidth := lipgloss.Width(nameStr)
+	namePad := nameW - nameRenderedWidth
+	if namePad < 0 {
+		namePad = 0
 	}
 
-	// Calculate gap to right-align metadata
-	// w is the inner content width of the box
-	leftWidth := lipgloss.Width(leftPart)
-	metaWidth := lipgloss.Width(meta)
-	padding := w - leftWidth - metaWidth - 2 // 2 for item padding
-	if padding < 2 {
-		padding = 2
-	}
-
-	full := leftPart + strings.Repeat(" ", padding) + meta
+	row := nameStr + strings.Repeat(" ", namePad) + "  " + sizeStr + "  " + dateStr
 	if selected {
-		return selectedItemStyle.Render(full)
+		return selectedItemStyle.Render(row)
 	}
-	return itemStyle.Render(full)
+	return itemStyle.Render(row)
 }
 
-// renderFileContent returns the file list content padded to viewport height.
+// renderFileContent returns the file grid with header, padded to viewport height.
 func (m model) renderFileContent(vpHeight int) string {
+	w := m.width
+	if w == 0 {
+		w = 80
+	}
+	innerW := w - 4
+
 	if len(m.files) == 0 {
-		return padToHeight(emptyStyle.Render("This directory is empty."), vpHeight)
+		header := m.renderGridHeader(innerW)
+		dh := vpHeight - 2
+		if dh < 1 {
+			dh = 1
+		}
+		return header + "\n" + padToHeight(emptyStyle.Render("This directory is empty."), dh)
 	}
 
-	// Inner width of the list box (box width - 2 borders)
-	innerW := m.width - 4
+	header := m.renderGridHeader(innerW)
+	dataHeight := vpHeight - 2 // subtract header + divider
+	if dataHeight < 1 {
+		dataHeight = 1
+	}
 
 	var lines []string
 	start := m.yOffset
-	end := start + vpHeight
+	end := start + dataHeight
 	if end > len(m.files) {
 		end = len(m.files)
 	}
@@ -314,23 +363,40 @@ func (m model) renderFileContent(vpHeight int) string {
 		lines = append(lines, m.renderFileRow(m.files[i], m.cursor == i, innerW))
 	}
 
-	return padToHeight(strings.Join(lines, "\n"), vpHeight)
+	return header + "\n" + padToHeight(strings.Join(lines, "\n"), dataHeight)
 }
 
 // renderSearchContent returns the search results padded to viewport height.
 func (m model) renderSearchContent(vpHeight int) string {
+	w := m.width
+	if w == 0 {
+		w = 80
+	}
+	innerW := w - 4
+	isFileView := m.state == fileList
+
+	// For file view, show grid header
+	var headerStr string
+	dataHeight := vpHeight
+	if isFileView {
+		headerStr = m.renderGridHeader(innerW)
+		dataHeight = vpHeight - 2
+	}
+
 	if len(m.searchMatches) == 0 {
+		empty := padToHeight(emptyStyle.Render("No matches found."), dataHeight)
+		if headerStr != "" {
+			return headerStr + "\n" + empty
+		}
 		return padToHeight(emptyStyle.Render("No matches found."), vpHeight)
 	}
 
-	innerW := m.width - 4
-
 	var lines []string
 	start := 0
-	if m.searchCursor >= vpHeight {
-		start = m.searchCursor - vpHeight + 1
+	if m.searchCursor >= dataHeight {
+		start = m.searchCursor - dataHeight + 1
 	}
-	end := start + vpHeight
+	end := start + dataHeight
 	if end > len(m.searchMatches) {
 		end = len(m.searchMatches)
 	}
@@ -339,7 +405,7 @@ func (m model) renderSearchContent(vpHeight int) string {
 		realIdx := m.searchMatches[i]
 		selected := i == m.searchCursor
 
-		if m.state == fileList {
+		if isFileView {
 			lines = append(lines, m.renderFileRow(m.files[realIdx], selected, innerW))
 		} else {
 			name := m.buckets[realIdx]
@@ -351,7 +417,11 @@ func (m model) renderSearchContent(vpHeight int) string {
 		}
 	}
 
-	return padToHeight(strings.Join(lines, "\n"), vpHeight)
+	content := padToHeight(strings.Join(lines, "\n"), dataHeight)
+	if headerStr != "" {
+		return headerStr + "\n" + content
+	}
+	return content
 }
 
 // renderStatusBar renders the full-width footer bar pinned to the bottom.
@@ -405,8 +475,8 @@ func (m model) renderStatusBar(w int) string {
 	var right string
 	if listLen > 0 {
 		pos := fmt.Sprintf("%d/%d", m.cursor+1, listLen)
-		vpHeight := m.viewportHeight()
-		if m.yOffset > 0 || m.yOffset+vpHeight < listLen {
+		visRows := m.visibleRows()
+		if m.yOffset > 0 || m.yOffset+visRows < listLen {
 			pct := 0
 			if listLen > 1 {
 				pct = m.cursor * 100 / (listLen - 1)
