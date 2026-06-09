@@ -443,6 +443,15 @@ func (m model) renderStatusBar(w int) string {
 				Render(fmt.Sprintf("  %d match(es)", len(m.searchMatches)))
 		}
 		left = prompt + query + cursor + matchInfo
+	} else if m.filterActive {
+		filterLabel := lipgloss.NewStyle().Foreground(amber).Bold(true).Render("filtered")
+		listLen := len(m.buckets)
+		if m.state == fileList {
+			listLen = len(m.files)
+		}
+		count := lipgloss.NewStyle().Foreground(dimWhite).Render(fmt.Sprintf(" %d items", listLen))
+		hint := lipgloss.NewStyle().Foreground(darkSlate).Render("  esc to clear")
+		left = filterLabel + count + hint
 	} else if m.statusMsg != "" {
 		left = lipgloss.NewStyle().Foreground(green).Bold(true).Render(m.statusMsg)
 	} else {

@@ -10,27 +10,30 @@ const (
 )
 
 type model struct {
-	profile       string
-	region        string
-	startBucket   string
-	s3Client      *s3Con
-	buckets       []string
-	files         []fileItem
-	cursor        int
-	state         sessionState
-	currentBucket string
-	currentPrefix string
-	err           error
-	width         int
-	height        int
-	yOffset       int
-	pendingY      bool
-	statusMsg     string
-	showHelp      bool
-	searching     bool
-	searchQuery   string
-	searchMatches []int
-	searchCursor  int
+	profile           string
+	region            string
+	startBucket       string
+	s3Client          *s3Con
+	buckets           []string
+	files             []fileItem
+	cursor            int
+	state             sessionState
+	currentBucket     string
+	currentPrefix     string
+	err               error
+	width             int
+	height            int
+	yOffset           int
+	pendingY          bool
+	statusMsg         string
+	showHelp          bool
+	searching         bool
+	searchQuery       string
+	searchMatches     []int
+	searchCursor      int
+	filterActive      bool
+	unfilteredBuckets []string
+	unfilteredFiles   []fileItem
 }
 
 func (m model) viewportHeight() int {
