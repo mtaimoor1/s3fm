@@ -22,7 +22,6 @@ func main() {
 		profile:     *profile,
 		region:      *region,
 		startBucket: *bucket,
-		state:       fileList,
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())

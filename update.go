@@ -185,7 +185,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "enter":
-			return m.handleEnter(viewportHeight)
+			return m.handleEnter()
 		case "esc", "backspace":
 			if m.filterActive {
 				m = m.clearFilter()
@@ -223,9 +223,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "G":
-			m.cursor = 0
-			m.yOffset = 0
-		case "g":
 			listLen := 0
 			if m.state == bucketList {
 				listLen = len(m.buckets)
@@ -238,6 +235,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.yOffset = m.cursor - viewportHeight + 1
 				}
 			}
+		case "g":
+			m.cursor = 0
+			m.yOffset = 0
 		case "pgup":
 			m.cursor -= viewportHeight
 			if m.cursor < 0 {
@@ -340,7 +340,7 @@ func (m model) handleSearchInput(key string, viewportHeight int) (tea.Model, tea
 }
 
 // handleEnter executes the "enter" action (navigate into bucket/folder).
-func (m model) handleEnter(viewportHeight int) (tea.Model, tea.Cmd) {
+func (m model) handleEnter() (tea.Model, tea.Cmd) {
 	if m.state == bucketList {
 		if m.cursor >= len(m.buckets) {
 			return m, nil
@@ -405,7 +405,6 @@ func (m model) applyFilter() model {
 		m.files = filtered
 	}
 	m.filterActive = true
-	m.cursor = 0
 	m.yOffset = 0
 	return m
 }
