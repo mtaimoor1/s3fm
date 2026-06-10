@@ -22,6 +22,7 @@ func main() {
 		profile:     *profile,
 		region:      *region,
 		startBucket: *bucket,
+		loading:     true,
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())

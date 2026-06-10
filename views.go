@@ -112,7 +112,9 @@ func (m model) View() string {
 
 	// --- List content ---
 	var listContent string
-	if m.searching {
+	if m.loading {
+		listContent = m.renderLoadingContent(vpHeight)
+	} else if m.search.active {
 		listContent = m.renderSearchContent(vpHeight)
 	} else if m.state == bucketList {
 		listContent = m.renderBucketContent(vpHeight)
@@ -366,6 +368,16 @@ func (m model) renderFileContent(vpHeight int) string {
 	return header + "\n" + padToHeight(strings.Join(lines, "\n"), dataHeight)
 }
 
+// renderLoadingContent shows an animated spinner while an S3 fetch is in progress.
+func (m model) renderLoadingContent(vpHeight int) string {
+	frame := spinnerFrames[m.spinnerFrame]
+	line := lipgloss.NewStyle().PaddingLeft(2).Render(
+		lipgloss.NewStyle().Foreground(violet).Bold(true).Render(frame) +
+			lipgloss.NewStyle().Foreground(dimWhite).Render(" Loading..."),
+	)
+	return padToHeight(line, vpHeight)
+}
+
 // renderSearchContent returns the search results padded to viewport height.
 func (m model) renderSearchContent(vpHeight int) string {
 	w := m.width
@@ -383,7 +395,7 @@ func (m model) renderSearchContent(vpHeight int) string {
 		dataHeight = vpHeight - 2
 	}
 
-	if len(m.searchMatches) == 0 {
+	if len(m.search.matches) == 0 {
 		empty := padToHeight(emptyStyle.Render("No matches found."), dataHeight)
 		if headerStr != "" {
 			return headerStr + "\n" + empty
@@ -393,17 +405,17 @@ func (m model) renderSearchContent(vpHeight int) string {
 
 	var lines []string
 	start := 0
-	if m.searchCursor >= dataHeight {
-		start = m.searchCursor - dataHeight + 1
+	if m.search.cursor >= dataHeight {
+		start = m.search.cursor - dataHeight + 1
 	}
 	end := start + dataHeight
-	if end > len(m.searchMatches) {
-		end = len(m.searchMatches)
+	if end > len(m.search.matches) {
+		end = len(m.search.matches)
 	}
 
 	for i := start; i < end; i++ {
-		realIdx := m.searchMatches[i]
-		selected := i == m.searchCursor
+		realIdx := m.search.matches[i]
+		selected := i == m.search.cursor
 
 		if isFileView {
 			lines = append(lines, m.renderFileRow(m.files[realIdx], selected, innerW))
@@ -433,26 +445,28 @@ func (m model) renderStatusBar(w int) string {
 
 	var left string
 
-	if m.searching {
+	if m.loading {
+		left = lipgloss.NewStyle().Foreground(violet).Bold(true).Render("Loading...")
+	} else if m.search.active {
 		prompt := lipgloss.NewStyle().Foreground(violet).Bold(true).Render("/")
-		query := lipgloss.NewStyle().Foreground(white).Render(m.searchQuery)
+		query := lipgloss.NewStyle().Foreground(white).Render(m.search.query)
 		cursor := lipgloss.NewStyle().Foreground(violet).Bold(true).Render("\u2588")
 		matchInfo := ""
-		if m.searchQuery != "" {
+		if m.search.query != "" {
 			matchInfo = lipgloss.NewStyle().Foreground(darkSlate).
-				Render(fmt.Sprintf("  %d match(es)", len(m.searchMatches)))
+				Render(fmt.Sprintf("  %d match(es)", len(m.search.matches)))
 		}
 		left = prompt + query + cursor + matchInfo
 	} else if m.statusMsg != "" {
 		left = lipgloss.NewStyle().Foreground(green).Bold(true).Render(m.statusMsg)
-	} else if m.filterActive {
+	} else if m.filter.active {
 		filterLabel := lipgloss.NewStyle().Foreground(amber).Bold(true).Render("filtered")
 		listLen := len(m.buckets)
 		if m.state == fileList {
 			listLen = len(m.files)
 		}
 		count := lipgloss.NewStyle().Foreground(dimWhite).Render(fmt.Sprintf(" %d items", listLen))
-		hint := lipgloss.NewStyle().Foreground(darkSlate).Render("  esc to clear")
+		hint := lipgloss.NewStyle().Foreground(darkSlate).Render("  esc to clear  r refresh all")
 		left = filterLabel + count + hint
 	} else {
 		keys := []struct{ key, desc string }{
@@ -462,6 +476,7 @@ func (m model) renderStatusBar(w int) string {
 			{"yy", "copy"},
 			{"/", "search"},
 			{"G/g", "btm/top"},
+			{"r", "refresh"},
 			{"?", "help"},
 			{"q", "quit"},
 		}
@@ -475,14 +490,14 @@ func (m model) renderStatusBar(w int) string {
 		left = strings.Join(hints, sep)
 	}
 
-	// Right side: position indicator
+	// Right side: position indicator (hidden while loading)
 	listLen := len(m.buckets)
 	if m.state == fileList {
 		listLen = len(m.files)
 	}
 
 	var right string
-	if listLen > 0 {
+	if !m.loading && listLen > 0 {
 		pos := fmt.Sprintf("%d/%d", m.cursor+1, listLen)
 		visRows := m.visibleRows()
 		if m.yOffset > 0 || m.yOffset+visRows < listLen {
@@ -541,6 +556,7 @@ func (m model) renderHelpOverlay(w int) string {
 		{"g", "Jump to top of list"},
 		{"yy", "Copy S3 path to clipboard"},
 		{"/", "Search and filter list"},
+		{"r", "Force refresh current view"},
 		{"pgup / pgdown", "Page up / down"},
 		{"?", "Toggle this help"},
 		{"q / ctrl+c", "Quit"},
